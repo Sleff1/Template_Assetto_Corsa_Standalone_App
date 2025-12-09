@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AC Lap History</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif;margin:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px;text-align:left}</style>
+</head>
+<body>
+  <h1>Lap History</h1>
+  <div id="stats"></div>
+  <div style="margin:12px 0"><label for="trackFilter">Filter track:</label>
+    <select id="trackFilter"><option value="">All</option></select></div>
+  <table id="laps"><thead><tr><th>ID</th><th>Car</th><th>Track</th><th>Time</th><th>Timestamp</th></tr></thead><tbody></tbody></table>
+  <h2>Lap Times Chart (seconds)</h2>
+  <canvas id="lapChart" width="800" height="300"></canvas>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    async function load(){
+      const res = await fetch('/api/laps');
+      const data = await res.json();
+      const t = document.querySelector('#laps tbody'); t.innerHTML='';
+      // populate track filter
+      const tracks = Array.from(new Set(data.map(d=>d.track).filter(Boolean)));
+      const sel = document.getElementById('trackFilter');
+      sel.innerHTML = '<option value="">All</option>' + tracks.map(x=>'<option value="'+x+'">'+x+'</option>').join('');
+      sel.onchange = ()=> render(data);
+      data.forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.id}</td><td>${r.car}</td><td>${r.track}</td><td>${r.time}</td><td>${r.timestamp}</td>`; t.appendChild(tr); });
+      const s = await fetch('/api/stats'); const stats = await s.json();
+      document.getElementById('stats').innerText = 'Total laps: ' + stats.total;
+      render(data);
+    }
+
+    function render(data){
+      const sel = document.getElementById('trackFilter');
+      const track = sel.value;
+      const filtered = track ? data.filter(d=>d.track===track) : data;
+      const last = filtered.slice(0,50).reverse(); // show last 50 (oldest->newest)
+      const labels = last.map(r=>r.timestamp || r.id);
+      const values = last.map(r=> (r.seconds === null || r.seconds === undefined) ? null : Number(r.seconds));
+      // update table to show filtered
+      const tbody = document.querySelector('#laps tbody'); tbody.innerHTML='';
+      last.slice().reverse().forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.id}</td><td>${r.car}</td><td>${r.track}</td><td>${r.time}</td><td>${r.timestamp}</td>`; tbody.appendChild(tr); });
+      if(window.lapChartObj){ window.lapChartObj.data.labels = labels; window.lapChartObj.data.datasets[0].data = values; window.lapChartObj.update(); return; }
+      const ctx = document.getElementById('lapChart').getContext('2d');
+      window.lapChartObj = new Chart(ctx, {
+        type: 'line',
+        data: { labels: labels, datasets: [{ label: 'Lap (s)', data: values, borderColor: 'blue', backgroundColor: 'rgba(0,0,255,0.1)', spanGaps: true }] },
+        options: { scales: { y: { title: { display: true, text: 'Seconds' } }, x: { ticks: { maxRotation: 45, minRotation: 0 } } }, plugins: { tooltip: { callbacks: { label: function(ctx){ var v = ctx.raw; if(v==null) return 'N/A'; var s = Number(v); var m = Math.floor(s/60); var sec = (s%60).toFixed(3); return ' '+(m>0?m+':':'')+sec+' ('+s.toFixed(3)+'s)'; } } } } }
+      });
+    }
+    setInterval(load,2000); load();
+  </script>
+</body>
+</html>
